@@ -1,0 +1,2 @@
+Target Width: 2048
+Target Height: 16
