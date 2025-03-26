@@ -33,7 +33,7 @@ class RootVolumeDataset(Dataset):
     
     def _zero_pad_image(self, image):
         """
-        Pads an image with zeros to reach the target dimensions.
+        Pads an image with zeros to reach the target dimensions exactly.
         
         Args:
             image (PIL.Image): Input image.
@@ -45,19 +45,26 @@ class RootVolumeDataset(Dataset):
         img_array = np.array(image)
         
         # Calculate padding amounts
-        pad_height = (self.target_height - img_array.shape[0]) // 2
-        pad_width = (self.target_width - img_array.shape[1]) // 2
+        pad_height = max(0, self.target_height - img_array.shape[0])
+        pad_width = max(0, self.target_width - img_array.shape[1])
+        
+        # Apply padding symmetrically
+        pad_top = pad_height // 2
+        pad_bottom = pad_height - pad_top
+        pad_left = pad_width // 2
+        pad_right = pad_width - pad_left
         
         # Pad the image with zeros
         padded_array = np.pad(
             img_array,
-            ((pad_height, pad_height), (pad_width, pad_width), (0, 0)),
+            ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
             mode='constant',
             constant_values=0
         )
         
         # Convert back to PIL Image
         return Image.fromarray(padded_array)
+
     
     def _apply_segmentation(self, image):
         """
