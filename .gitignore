@@ -2,3 +2,4 @@ __pycache__
 seg_models
 .vscode
 images
+segmentation_verification
