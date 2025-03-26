@@ -26,7 +26,7 @@ class RootVolumeDataset(Dataset):
             transforms.ToTensor(),
             transforms.Normalize([0.5]*4, [0.5]*4)  # 4 channels (RGB + mask)
         ])
-        self.yolo_seg = YOLO('yolov11n-seg.pt').eval()  # YOLOv11 for segmentation
+        self.yolo_seg = YOLO('seg_models/best_full.pt').eval()  # YOLOv11 for segmentation
         
     def __len__(self):
         return len(self.df)
@@ -67,14 +67,21 @@ class RootVolumeDataset(Dataset):
             image (PIL.Image): Input image.
         
         Returns:
-            numpy.ndarray: Segmentation mask.
+            numpy.ndarray: Segmentation mask (zero mask if no objects detected).
         """
         # Convert to NumPy array for YOLOv11
         img_array = np.array(image)
         
         # Get segmentation mask
         results = self.yolo_seg(img_array)
-        mask = results[0].masks.data[0].cpu().numpy()  # Get first mask
+        
+        # Check if masks were detected
+        if results[0].masks is None:
+            # Return a zero mask if no objects detected
+            return np.zeros((self.target_height, self.target_width), dtype=np.float32)
+        
+        # Get first mask
+        mask = results[0].masks.data[0].cpu().numpy()
         
         # Resize mask to match image size
         mask = cv2.resize(mask, (self.target_width, self.target_height))
