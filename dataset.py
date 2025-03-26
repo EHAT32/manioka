@@ -5,6 +5,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 import pandas as pd
+import cv2
+from ultralytics import YOLO 
 
 class RootVolumeDataset(Dataset):
     def __init__(self, csv_path, img_root, target_width, target_height, transform=None):
@@ -22,8 +24,9 @@ class RootVolumeDataset(Dataset):
         self.target_height = target_height
         self.transform = transform or transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize([0.5]*3, [0.5]*3)
+            transforms.Normalize([0.5]*4, [0.5]*4)  # 4 channels (RGB + mask)
         ])
+        self.yolo_seg = YOLO('yolov11n-seg.pt').eval()  # YOLOv11 for segmentation
         
     def __len__(self):
         return len(self.df)
@@ -56,6 +59,27 @@ class RootVolumeDataset(Dataset):
         # Convert back to PIL Image
         return Image.fromarray(padded_array)
     
+    def _apply_segmentation(self, image):
+        """
+        Applies YOLOv11 segmentation to an image and returns the mask.
+        
+        Args:
+            image (PIL.Image): Input image.
+        
+        Returns:
+            numpy.ndarray: Segmentation mask.
+        """
+        # Convert to NumPy array for YOLOv11
+        img_array = np.array(image)
+        
+        # Get segmentation mask
+        results = self.yolo_seg(img_array)
+        mask = results[0].masks.data[0].cpu().numpy()  # Get first mask
+        
+        # Resize mask to match image size
+        mask = cv2.resize(mask, (self.target_width, self.target_height))
+        return mask
+    
     def _load_slice_sequence(self, folder, side, start, end):
         """Load sequence of slices for given range"""
         images = []
@@ -68,11 +92,54 @@ class RootVolumeDataset(Dataset):
             if os.path.exists(img_path):
                 img = Image.open(img_path).convert('RGB')
                 img = self._zero_pad_image(img)  # Apply zero padding
-                images.append(np.array(img))
+                mask = self._apply_segmentation(img)  # Get segmentation mask
+                
+                # Combine RGB + mask as 4-channel input
+                combined = np.concatenate([img, mask[..., None]], axis=-1)
+                images.append(combined)
             else:
                 # Handle missing slices with zero padding
                 images.append(np.zeros((self.target_height, self.target_width, 4), dtype=np.uint8))
         return np.stack(images)
+    
+    def verify_segmentation(self, idx, save_dir='segmentation_verification'):
+        """
+        Verifies the segmentation model by saving input images and their masks.
+        
+        Args:
+            idx (int): Index of the sample to verify.
+            save_dir (str): Directory to save verification results.
+        """
+        import matplotlib.pyplot as plt
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Load the sample
+        row = self.df.iloc[idx]
+        folder = row['FolderName']
+        side = row['Side']
+        start = row['Start']
+        end = row['End']
+        
+        # Load image sequence
+        images = self._load_slice_sequence(folder, side, start, end)
+        
+        # Save images and masks
+        for i in range(images.shape[0]):
+            img_np = images[i][:, :, :3]  # RGB channels
+            mask_np = images[i][:, :, 3]  # Mask channel
+            
+            # Plot and save
+            fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+            ax[0].imshow(img_np)
+            ax[0].set_title('Input Image')
+            ax[0].axis('off')
+            
+            ax[1].imshow(mask_np, cmap='gray')
+            ax[1].set_title('Segmentation Mask')
+            ax[1].axis('off')
+            
+            plt.savefig(os.path.join(save_dir, f'segmentation_{idx}_{i}.png'))
+            plt.close()
     
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
@@ -91,7 +158,7 @@ class RootVolumeDataset(Dataset):
             images = torch.stack([self.transform(img) for img in images])
         
         return {
-            'images': images,  # Shape: (num_slices, 3, H, W)
+            'images': images,  # Shape: (num_slices, 4, H, W)
             'volume': torch.tensor(volume, dtype=torch.float32),
             'plant_num': plant_num,  # For debugging/analysis
             'num_slices': end - start + 1  # For dynamic padding
