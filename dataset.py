@@ -69,6 +69,19 @@ class RootVolumeDataset(Dataset):
         # Convert back to PIL Image
         return Image.fromarray(padded_array)
     
+    def _merge_left_right(self, limg, rimg):
+        width = min(limg.width, rimg.width)
+        height = limg.height
+        limg = limg.crop((0, 0, width, height))
+        height = rimg.height
+        rimg = rimg.crop((0, 0, width, height))
+        
+        stacked_img = Image.new("RGB", (width, limg.height+rimg.height))
+        stacked_img.paste(rimg.rotate(180), (0,0))
+        stacked_img.paste(limg, (0, rimg.height))
+        
+        return stacked_img
+    
     def _apply_segmentation(self, image):
         """
         Applies YOLOv11 segmentation to an image and returns the mask.
