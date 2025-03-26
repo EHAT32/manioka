@@ -6,9 +6,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+def nearest_power_of_2(n):
+    return 2 ** int(np.ceil(np.log2(n)))
+
 def find_max_slice(csv_path):
     df = pd.read_csv(csv_path)
-    return np.max(df["End"] - df["Start"]) + 1
+    return nearest_power_of_2(np.max(df["End"] - df["Start"]) + 1)
 
 def get_params():
     size_file = open("target_size.txt", "r")
