@@ -71,7 +71,7 @@ class RootVolumeDataset(Dataset):
                 images.append(np.array(img))
             else:
                 # Handle missing slices with zero padding
-                images.append(np.zeros((self.target_height, self.target_width, 3), dtype=np.uint8))
+                images.append(np.zeros((self.target_height, self.target_width, 4), dtype=np.uint8))
         return np.stack(images)
     
     def __getitem__(self, idx):
