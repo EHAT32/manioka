@@ -62,7 +62,7 @@ def train():
         target_width=params["width"],
         target_height=params["height"]
     )
-    
+    dataset[0]
     # DataLoader
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=custom_collate_fn)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

@@ -27,7 +27,9 @@ class RootVolumeDataset(Dataset):
             transforms.ToTensor(),
             # transforms.Normalize([0.5]*4, [0.5]*4)  # 4 channels (RGB + mask)
         ])
-        self.yolo_seg = YOLO('seg_models/best_early.pt').eval()  # YOLOv11 for segmentation
+        self.models = {"early" : 'seg_models/best_early.pt',
+                       "late" : 'seg_models/best_late.pt',
+                       "full" : 'seg_models/best_full.pt'}
 
     def __len__(self):
         return len(self.df)
@@ -153,31 +155,31 @@ class RootVolumeDataset(Dataset):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
                 full_img = self._merge_left_right(limg, rimg)
+                crops = self._crop_segmented(full_img)
+                # # Apply YOLO segmentation and draw polygons
+                # yolo_results = self.yolo_seg(np.array(full_img))
+                # full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
+                # original_images.append(np.array(full_img_with_polygons)) # add to the list before converting to numpy array
 
-                # Apply YOLO segmentation and draw polygons
-                yolo_results = self.yolo_seg(np.array(full_img))
-                full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
-                original_images.append(np.array(full_img_with_polygons)) # add to the list before converting to numpy array
+                # mask = self._apply_segmentation(full_img_with_polygons)  # Get segmentation mask
 
-                mask = self._apply_segmentation(full_img_with_polygons)  # Get segmentation mask
-
-                # Combine RGB + mask as 4-channel input
-                combined = np.concatenate([np.array(full_img_with_polygons), np.array(mask)], axis=-1)
-                images.append(combined)
+                # # Combine RGB + mask as 4-channel input
+                # combined = np.concatenate([np.array(full_img_with_polygons), np.array(mask)], axis=-1)
+                images.append(crops)
             else:
                 # Handle missing slices with zero padding
-                images.append(np.zeros((self.target_height, self.target_width, 6), dtype=np.uint8))
+                images.append([Image.new('RGBA', (64, 64), (0,0,0,0))])
 
-        # Plot all original images stacked vertically in a single figure
-        num_images = len(original_images)
-        if num_images > 0:
-            fig, axes = plt.subplots(num_images, 1, figsize=(5, 3 * num_images))  # Adjust size as needed
+        # # Plot all original images stacked vertically in a single figure
+        # num_images = len(original_images)
+        # if num_images > 0:
+        #     fig, axes = plt.subplots(num_images, 1, figsize=(5, 3 * num_images))  # Adjust size as needed
 
-            for i, img in enumerate(original_images):
-                axes[i].imshow(img)
-                axes[i].axis('off')
-                axes[i].set_title(f"Slice {start + i}")  # Set title for each slice... plt.tight_layout()  # Adjust layout to prevent overlapping titles
-            plt.show()
+        #     for i, img in enumerate(original_images):
+        #         axes[i].imshow(img)
+        #         axes[i].axis('off')
+        #         axes[i].set_title(f"Slice {start + i}")  # Set title for each slice... plt.tight_layout()  # Adjust layout to prevent overlapping titles
+        #     plt.show()
 
         return images
 
@@ -196,7 +198,11 @@ class RootVolumeDataset(Dataset):
         img_array = np.array(image)
 
         # Perform segmentation using YOLO
-        results = self.yolo_seg(img_array)
+        for chkpt in self.models.keys():
+            model = YOLO(self.models[chkpt]).eval()
+            results = model(img_array, verbose=False)
+            if len(results[0].boxes.xyxy) != 0:
+                break
 
         # Initialize a list to store cropped segments
         cropped_segments = []
@@ -214,15 +220,17 @@ class RootVolumeDataset(Dataset):
                 # Append the cropped segment to the list
                 cropped_segments.append(cropped_segment)
         else:
-            return [image]  # Return the original image
+            return [image]  # Return the original image if results are None
 
         return cropped_segments
     
     def _merge_crops(self, cropped_segments):
         """Merge all crops into one image
         """
-        total_width = sum(img.width for img in cropped_segments)
-        max_height = max(img.height for img in cropped_segments)
+        #squeeze into one list
+        crops = [crop for slice in cropped_segments for crop in slice]
+        total_width = sum(img.width for img in crops)
+        max_height = max(img.height for img in crops)
         
         merged_img = Image.new("RGBA", total_width, max_height, (0,0,0,0))
         
@@ -245,7 +253,8 @@ class RootVolumeDataset(Dataset):
 
         # Load image sequence
         images = self._load_slice_sequence(folder, side, start, end)
-        cropped_images = self._
+        merged_images = self._merge_crops(images)
+        a=1
 
         # Apply transforms
         if self.transform:
