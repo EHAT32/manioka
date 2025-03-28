@@ -8,9 +8,10 @@ import pandas as pd
 import cv2
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 class RootVolumeDataset(Dataset):
-    def __init__(self, csv_path, img_root, target_width, target_height, transform=None):
+    def __init__(self, csv_path, img_root, target_width, target_height, train = True, transform=None):
         """
         Args:
             csv_path (str): Path to CSV file with annotations.
@@ -23,13 +24,9 @@ class RootVolumeDataset(Dataset):
         self.img_root = img_root
         self.target_width = target_width
         self.target_height = target_height
-        self.transform = transform or transforms.Compose([
-            transforms.ToTensor(),
-            # transforms.Normalize([0.5]*4, [0.5]*4)  # 4 channels (RGB + mask)
-        ])
-        self.models = {"early" : 'seg_models/best_early.pt',
-                       "late" : 'seg_models/best_late.pt',
-                       "full" : 'seg_models/best_full.pt'}
+        self.transform = transform 
+        self.is_train = train
+        self.yolo_seg = YOLO('seg_models/best_full.pt').eval().to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
 
     def __len__(self):
         return len(self.df)
@@ -139,7 +136,6 @@ class RootVolumeDataset(Dataset):
     def _load_slice_sequence(self, folder, side, start, end):
         """Load sequence of slices for given range"""
         images = []
-        original_images = []  # List to store original images
         for i in range(start, end + 1):
             limg_path = os.path.join(
                 self.img_root,
@@ -168,7 +164,7 @@ class RootVolumeDataset(Dataset):
                 images.append(crops)
             else:
                 # Handle missing slices with zero padding
-                images.append([Image.new('RGBA', (64, 64), (0,0,0,0))])
+                images.append([Image.new('RGB', (64, 64), (0,0,0))])
 
         # # Plot all original images stacked vertically in a single figure
         # num_images = len(original_images)
@@ -198,11 +194,7 @@ class RootVolumeDataset(Dataset):
         img_array = np.array(image)
 
         # Perform segmentation using YOLO
-        for chkpt in self.models.keys():
-            model = YOLO(self.models[chkpt]).eval()
-            results = model(img_array, verbose=False)
-            if len(results[0].boxes.xyxy) != 0:
-                break
+        results = self.yolo_seg(img_array, verbose=False)
 
         # Initialize a list to store cropped segments
         cropped_segments = []
@@ -232,11 +224,11 @@ class RootVolumeDataset(Dataset):
         total_width = sum(img.width for img in crops)
         max_height = max(img.height for img in crops)
         
-        merged_img = Image.new("RGBA", total_width, max_height, (0,0,0,0))
+        merged_img = Image.new("RGB", (total_width, max_height), (0,0,0))
         
         x_offset = 0
-        for img in cropped_segments:
-            merged_img.paste(img, (x_offset,0), img)
+        for img in crops:
+            merged_img.paste(img, (x_offset,0))
             x_offset += img.width
         return merged_img
 
@@ -249,23 +241,23 @@ class RootVolumeDataset(Dataset):
         side = row['Side']
         start = row['Start']
         end = row['End']
-        volume = row['RootVolume']
+        if self.is_train:
+            volume = row['RootVolume']
 
         # Load image sequence
         images = self._load_slice_sequence(folder, side, start, end)
         merged_images = self._merge_crops(images)
-        a=1
 
         # Apply transforms
         if self.transform:
             images = torch.stack([self.transform(img) for img in images])
-
-        return {
-            'images': images,  # Shape: (num_slices, 6, H, W)
-            'volume': torch.tensor(volume, dtype=torch.float32),
+        res = {'images': merged_images,
             'plant_num': plant_num,  # For debugging/analysis
-            'num_slices': end - start + 1  # For dynamic padding
-        }
+            'num_slices': end - start + 1  # For dynamic padding}
+            }
+        if self.is_train:
+            res['volume'] = torch.tensor(volume, dtype=torch.float32)
+        return res
 
     def verify_segmentation(self, idx, save_dir='segmentation_verification'):
         """
