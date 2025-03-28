@@ -376,3 +376,27 @@ class RootVolumeDataset(Dataset):
         save_path = os.path.join(save_dir, f'cropping_{idx}.png')
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         plt.close(fig)
+
+
+class ProcessedDataset(Dataset):
+    def __init__(self, df : pd.DataFrame, transform = None, is_train = True):
+        super().__init__()
+        self.df = df
+        self.transform = transform
+        self.is_train = is_train
+
+    def __getitem__(self, index):
+        image = Image.open(self.df['segments'].iloc[index]).convert("RGB")
+
+        if self.transform:
+            image = self.transform(image)
+
+        if self.is_train:
+            label = self.df['RootVolume'].iloc[index]
+
+            return image, torch.tensor(label, dtype=torch.float32)
+
+        return image
+
+    def __len__(self):
+        return len(self.df)
