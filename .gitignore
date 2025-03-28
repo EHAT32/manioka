@@ -4,3 +4,4 @@ seg_models
 images
 *_verification
 processed_data
+lightning_logs
