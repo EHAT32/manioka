@@ -179,7 +179,59 @@ class RootVolumeDataset(Dataset):
                 axes[i].set_title(f"Slice {start + i}")  # Set title for each slice... plt.tight_layout()  # Adjust layout to prevent overlapping titles
             plt.show()
 
-        return np.stack(images)
+        return images
+
+    def _crop_segmented(self, image):
+        """
+        Crops each detected segment from the image and returns a list of cropped segments.
+        If no segments are found, returns the original image.
+
+        Args:
+            image (PIL.Image): Input image.
+
+        Returns:
+            List[PIL.Image] or PIL.Image: List of cropped segments. If no segments are found, returns the original image.
+        """
+        # Convert the input image to a NumPy array for YOLO segmentation
+        img_array = np.array(image)
+
+        # Perform segmentation using YOLO
+        results = self.yolo_seg(img_array)
+
+        # Initialize a list to store cropped segments
+        cropped_segments = []
+
+        # Check if there are any detections
+        if results[0].boxes.xyxy is not None and len(results[0].boxes.xyxy) > 0:
+            # Iterate over the detected bounding boxes
+            for box in results[0].boxes.xyxy:
+                # Extract bounding box coordinates
+                x1, y1, x2, y2 = map(int, box.tolist())
+
+                # Crop the segment from the original image
+                cropped_segment = image.crop((x1, y1, x2, y2))
+
+                # Append the cropped segment to the list
+                cropped_segments.append(cropped_segment)
+        else:
+            return [image]  # Return the original image
+
+        return cropped_segments
+    
+    def _merge_crops(self, cropped_segments):
+        """Merge all crops into one image
+        """
+        total_width = sum(img.width for img in cropped_segments)
+        max_height = max(img.height for img in cropped_segments)
+        
+        merged_img = Image.new("RGBA", total_width, max_height, (0,0,0,0))
+        
+        x_offset = 0
+        for img in cropped_segments:
+            merged_img.paste(img, (x_offset,0), img)
+            x_offset += img.width
+        return merged_img
+
 
 
     def __getitem__(self, idx):
@@ -193,6 +245,7 @@ class RootVolumeDataset(Dataset):
 
         # Load image sequence
         images = self._load_slice_sequence(folder, side, start, end)
+        cropped_images = self._
 
         # Apply transforms
         if self.transform:
@@ -250,3 +303,75 @@ class RootVolumeDataset(Dataset):
             save_path = os.path.join(save_dir, f'segmentation_{idx}_{i}.png')
             plt.savefig(save_path, bbox_inches='tight', dpi=600)  # Adjust DPI as needed
             plt.close(fig)  # Close the figure after saving to free memory
+
+    def verify_cropping(self, idx, save_dir='cropping_verification'):
+        """
+        Verifies the cropping by displaying original images and their cropped segments side by side.
+        Each slice gets its own row showing the original image followed by its cropped segments.
+
+        Args:
+            idx (int): Index of the sample to verify.
+            save_dir (str): Directory to save verification results.
+        """
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Load the sample
+        row = self.df.iloc[idx]
+        folder = row['FolderName']
+        side = row['Side']
+        start = row['Start']
+        end = row['End']
+
+        # Load image sequence
+        images = self._load_slice_sequence(folder, side, start, end)
+
+        # Prepare lists to store images for plotting
+        original_images = []
+        all_cropped_segments = []
+
+        # Process each slice in the sequence
+        for i in range(images.shape[0]):
+            # Get the RGB image (first 3 channels)
+            img_np = images[i][:, :, :3].astype('uint8')
+            img_pil = Image.fromarray(img_np)
+            
+            original_images.append(img_pil)
+            
+            # Crop segments using _crop_segmented
+            cropped_segments = self._crop_segmented(img_pil)
+            all_cropped_segments.append(cropped_segments)
+
+        # Determine the maximum number of cropped segments per image
+        max_crops = max(len(crops) for crops in all_cropped_segments) if all_cropped_segments else 0
+
+        # Create a figure with one row per slice and enough columns for original + max crops
+        num_slices = len(original_images)
+        fig, axes = plt.subplots(num_slices, max_crops + 1, figsize=(15, 3 * num_slices))
+        
+        # If there's only one slice, axes won't be 2D, so we adjust
+        if num_slices == 1:
+            axes = axes.reshape(1, -1)
+
+        # Plot each slice and its cropped segments
+        for i in range(num_slices):
+            # Plot original image
+            axes[i, 0].imshow(original_images[i])
+            axes[i, 0].set_title(f"Original Slice {start + i}")
+            axes[i, 0].axis('off')
+
+            # Plot cropped segments
+            for j, segment in enumerate(all_cropped_segments[i]):
+                axes[i, j+1].imshow(segment)
+                axes[i, j+1].set_title(f"Crop {j+1}")
+                axes[i, j+1].axis('off')
+
+            # Hide empty subplots if this slice has fewer crops than max
+            for j in range(len(all_cropped_segments[i]) + 1, max_crops + 1):
+                axes[i, j].axis('off')
+
+        plt.tight_layout()
+        
+        # Save the figure
+        save_path = os.path.join(save_dir, f'cropping_{idx}.png')
+        plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        plt.close(fig)
