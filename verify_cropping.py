@@ -58,4 +58,4 @@ if __name__ == '__main__':
         target_width=params["width"],
         target_height=params["height"]
     )
-    dataset.verify_segmentation(23)
+    dataset.verify_cropping(217)

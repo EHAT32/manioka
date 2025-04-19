@@ -2,5 +2,6 @@ __pycache__
 seg_models
 .vscode
 images
-segmentation_verification
+*_verification
+processed_data
 train_labels

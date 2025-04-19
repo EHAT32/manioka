@@ -6,47 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
-
-def custom_collate_fn(batch):
-    """
-    Collate function to handle variable-sized sequences by padding them.
-    
-    Args:
-        batch (list): List of dictionaries containing 'images' and 'volume'.
-    
-    Returns:
-        dict: Batch with padded 'images' and stacked 'volume'.
-    """
-    # Extract images and volumes from the batch
-    images = [item['images'] for item in batch]
-    volumes = [item['volume'] for item in batch]
-    
-    # Pad images to the same length
-    images_padded = pad_sequence(images, batch_first=True, padding_value=0)
-    
-    # Stack volumes
-    volumes_stacked = torch.stack(volumes)
-    
-    return {
-        'images': images_padded,
-        'volume': volumes_stacked
-    }
-
-def nearest_power_of_2(n):
-    return 2 ** int(np.ceil(np.log2(n)))
-
-def find_max_slice(csv_path):
-    df = pd.read_csv(csv_path)
-    return nearest_power_of_2(np.max(df["End"] - df["Start"]) + 1)
-
-def get_params():
-    size_file = open("target_size.txt", "r")
-    width, height = [int(line.replace("\n", "").split(" ")[-1]) for line in size_file.readlines()]
-    params = {}
-    params["width"] = width
-    params["height"] = height
-    params["max_slices"] = find_max_slice("Train.csv")
-    return params
+from common import *
 
 def train():
     torch.manual_seed(0)
@@ -62,7 +22,7 @@ def train():
         target_width=params["width"],
         target_height=params["height"]
     )
-    
+    dataset[0]
     # DataLoader
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=custom_collate_fn)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
