@@ -156,7 +156,10 @@ class RootVolumeDataset(Dataset):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
                 full_img = self._merge_left_right(limg, rimg)
-                crops = self._crop_segmented(full_img)
+                if self.pre_segment:
+                    crops = self._crop_segmented(full_img)
+                else:
+                    crops = full_img
                 # # Apply YOLO segmentation and draw polygons
                 # yolo_results = self.yolo_seg(np.array(full_img))
                 # full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
@@ -184,7 +187,7 @@ class RootVolumeDataset(Dataset):
 
         return images
 
-    def _crop_segmented(self, image):
+    def _crop_segmented(self, image : Image):
         """
         Crops each detected segment from the image and returns a list of cropped segments.
         If no segments are found, returns the original image.
@@ -251,11 +254,14 @@ class RootVolumeDataset(Dataset):
 
         # Load image sequence
         images = self._load_slice_sequence(folder, side, start, end)
-        merged_images = self._merge_crops(images)
+        if self.pre_segment:
+            merged_images = self._merge_crops(images)
+        else:
+            merged_images = images
 
         # Apply transforms
         if self.transform:
-            images = torch.stack([self.transform(img) for img in images])
+            images = torch.stack([self.transform(merged_images)])
         res = {'images': merged_images,
             'plant_num': plant_num,  # For debugging/analysis
             'num_slices': end - start + 1  # For dynamic padding}
