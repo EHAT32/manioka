@@ -11,7 +11,9 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 class RootVolumeDataset(Dataset):
-    def __init__(self, csv_path, img_root, target_width, target_height, train = True, transform=None):
+    def __init__(self, csv_path, img_root, label_root,
+                 target_width, target_height, device, train = True, 
+                 transform=None, pre_segment = False):
         """
         Args:
             csv_path (str): Path to CSV file with annotations.
@@ -22,11 +24,14 @@ class RootVolumeDataset(Dataset):
         """
         self.df = pd.read_csv(csv_path)
         self.img_root = img_root
+        self.label_root = label_root
         self.target_width = target_width
         self.target_height = target_height
         self.transform = transform 
         self.is_train = train
-        self.yolo_seg = YOLO('seg_models/best_full.pt').eval().to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        self.pre_segment = pre_segment
+        self.device = device
+        self.yolo_seg = YOLO('seg_models/best_full.pt').eval().to(self.device)
 
     def __len__(self):
         return len(self.df)
