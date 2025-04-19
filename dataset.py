@@ -10,7 +10,9 @@ from ultralytics import YOLO
 import matplotlib.pyplot as plt
 
 class RootVolumeDataset(Dataset):
-    def __init__(self, csv_path, img_root, target_width, target_height, transform=None):
+    def __init__(self, csv_path, img_root, 
+                 target_width, target_height, device, transform=None,
+                 pre_segment = False):
         """
         Args:
             csv_path (str): Path to CSV file with annotations.
@@ -23,11 +25,13 @@ class RootVolumeDataset(Dataset):
         self.img_root = img_root
         self.target_width = target_width
         self.target_height = target_height
+        self.device = device
         self.transform = transform or transforms.Compose([
             transforms.ToTensor(),
             # transforms.Normalize([0.5]*4, [0.5]*4)  # 4 channels (RGB + mask)
         ])
-        self.yolo_seg = YOLO('seg_models/best_early.pt').eval()  # YOLOv11 for segmentation
+        self.pre_segment = pre_segment
+        self.yolo_seg = YOLO('seg_models/best_early.pt').eval().to(self.device)  # YOLOv11 for segmentation
 
     def __len__(self):
         return len(self.df)
@@ -111,7 +115,7 @@ class RootVolumeDataset(Dataset):
         mask = cv2.resize(mask, (image.width, image.height))
         return mask
 
-    def draw_polygons(self, image, results):
+    def draw_polygons(self, image : Image, results):
         """
         Draws polygons on an image based on YOLO segmentation results.
 
@@ -153,16 +157,18 @@ class RootVolumeDataset(Dataset):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
                 full_img = self._merge_left_right(limg, rimg)
+                if self.pre_segment:
+                    # Apply YOLO segmentation and draw polygons
+                    yolo_results = self.yolo_seg(np.array(full_img))
+                    full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
+                    original_images.append(np.array(full_img_with_polygons)) # add to the list before converting to numpy array
 
-                # Apply YOLO segmentation and draw polygons
-                yolo_results = self.yolo_seg(np.array(full_img))
-                full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
-                original_images.append(np.array(full_img_with_polygons)) # add to the list before converting to numpy array
+                    mask = self._apply_segmentation(full_img_with_polygons)  # Get segmentation mask
 
-                mask = self._apply_segmentation(full_img_with_polygons)  # Get segmentation mask
-
-                # Combine RGB + mask as 4-channel input
-                combined = np.concatenate([np.array(full_img_with_polygons), np.array(mask)], axis=-1)
+                    # Combine RGB + mask as 6-channel input
+                    combined = np.concatenate([np.array(full_img_with_polygons), np.array(mask)], axis=-1)
+                else:
+                    combined = np.array(full_img)
                 images.append(combined)
             else:
                 # Handle missing slices with zero padding
