@@ -3,3 +3,4 @@ seg_models
 .vscode
 images
 segmentation_verification
+train_labels
