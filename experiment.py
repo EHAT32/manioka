@@ -117,7 +117,7 @@ if __name__ == '__main__':
     #     deterministic=True  # For reproducibility
     # )
     
-    model = RootVolumeRegressor()
+    model = RootRegressor()
     
     trainer = L.Trainer(max_epochs=20)
     trainer.fit(model, train_dataloader)
