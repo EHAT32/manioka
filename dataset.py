@@ -156,6 +156,9 @@ class RootVolumeDataset(Dataset):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
                 full_img = self._merge_left_right(limg, rimg)
+                label_path = f"train_labels/{folder}"
+                mask_l = self._get_label(label_path+f"_L_{i:03d}.png", limg.width, limg.height)
+                mask_r = self._get_label(label_path+f"_R_{i:03d}.png", rimg.width, rimg.height)
                 if self.pre_segment:
                     crops = self._crop_segmented(full_img)
                 else:
@@ -240,7 +243,17 @@ class RootVolumeDataset(Dataset):
             x_offset += img.width
         return merged_img
 
-
+    def _get_label(self, path, width, height):
+        polygons = []
+        with open(path, "r") as f:
+            for line in f:
+                values = line.strip().split()
+                if len(values) < 3: #пропускаем неполные данные
+                    continue
+                coords = [float(v) for v in values[1:]] #первое это class_id
+                polygon = np.array([(int(x * width), int(y * height)) for x, y in zip(coords[0::2], coords[1::2])], dtype=np.int32)
+                polygons.append(polygon)
+        return polygons        
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
