@@ -81,7 +81,7 @@ class RootVolumeDataset(Dataset):
             rimg (Image): image from the right side
 
         Returns:
-            Image: merged image
+            PIL.Image: merged image
         """
         width = min(limg.width, rimg.width)
         height = limg.height
