@@ -9,6 +9,11 @@ import cv2
 from ultralytics import YOLO
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import random
+
+def generate_random_color():
+    """Generate a bright, random color."""
+    return tuple(random.randint(100, 255) for _ in range(3))  # RGB values
 
 class RootVolumeDataset(Dataset):
     def __init__(self, csv_path, img_root, label_root,
@@ -124,6 +129,7 @@ class RootVolumeDataset(Dataset):
         mask = cv2.resize(mask, (image.width, image.height))
         return mask
 
+    #works with YOLO
     def draw_polygons(self, image : Image, results):
         """
         Draws polygons on an image based on YOLO segmentation results.
@@ -147,6 +153,20 @@ class RootVolumeDataset(Dataset):
 
         return img
 
+    #works with list of parsed polygons
+    def draw_mask(img : Image, polygons : list) -> Image:
+        """Draws polygon masks with unique colors per instance on the image."""
+        image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        
+        img_height, img_width = image.size
+        
+        for polygon in polygons:
+            color = generate_random_color()  # Unique color for each instance
+            cv2.polylines(image, [polygon], isClosed=True, color=color, thickness=2)
+            #cv2.fillPoly(image, [polygon], color=color + (50,))  # Transparent fill
+        
+        return image
+
     def _load_slice_sequence(self, folder, side, start, end):
         """Load sequence of slices for given range"""
         images = []
@@ -164,10 +184,12 @@ class RootVolumeDataset(Dataset):
             if os.path.exists(limg_path) and os.path.exists(rimg_path):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
-                full_img = self._merge_left_right(limg, rimg)
                 label_path = f"train_labels/{folder}"
-                mask_l = self._get_label(label_path+f"_L_{i:03d}.png", limg.width, limg.height)
-                mask_r = self._get_label(label_path+f"_R_{i:03d}.png", rimg.width, rimg.height)
+                mask_l = self._get_label(label_path+f"_L_{i:03d}.txt", limg.width, limg.height)
+                mask_r = self._get_label(label_path+f"_R_{i:03d}.txt", rimg.width, rimg.height)
+                limg = self.draw_mask(limg, mask_l)
+                rimg = self.draw_mask(rimg, mask_r)
+                full_img = self._merge_left_right(limg, rimg)
                 if self.pre_segment:
                     crops = self._crop_segmented(full_img)
                 else:
