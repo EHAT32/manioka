@@ -56,6 +56,7 @@ if __name__ == '__main__':
         csv_path='Train.csv',
         img_root='images/train/',
         target_width=params["width"],
-        target_height=params["height"]
+        target_height=params["height"],
+        pre_segment = False
     )
     dataset.verify_segmentation(23)
