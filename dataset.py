@@ -73,7 +73,16 @@ class RootVolumeDataset(Dataset):
         # Convert back to PIL Image
         return Image.fromarray(padded_array)
 
-    def _merge_left_right(self, limg, rimg):
+    def _merge_left_right(self, limg : Image, rimg : Image) -> Image:
+        """Merge left and right sides to create full image
+
+        Args:
+            limg (Image): image from the left side
+            rimg (Image): image from the right side
+
+        Returns:
+            Image: merged image
+        """
         width = min(limg.width, rimg.width)
         height = limg.height
         limg = limg.crop((0, 0, width, height))
