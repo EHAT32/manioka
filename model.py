@@ -1,49 +1,57 @@
-import torch
+# simple CNN for the predictions
 import torch.nn as nn
+import lightning as L
+import torch
 
-class RootVolumeNet(nn.Module):
-    def __init__(self, max_slices=50):
+class RootRegressor(L.LightningModule):
+    def __init__(self, lr=1e-3):
         super().__init__()
-        self.max_slices = max_slices
-        
-        # Shared encoder for 4-channel input (RGB + mask)
-        self.encoder = nn.Sequential(
-            nn.Conv2d(4, 32, kernel_size=(3, 3), padding=(1, 1)),
+        self.lr = lr
+
+        #convolution
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),
-            
-            nn.Conv2d(32, 64, kernel_size=(3, 3), padding=(1, 1)),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2)),
-            
-            nn.Conv2d(64, 128, kernel_size=(3, 3), padding=(1, 1)),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2))
+            nn.AdaptiveAvgPool2d((1, 1))
         )
-        
-        # Regressor
-        self.regressor = nn.Sequential(
-            nn.Linear(128 * 256 * 2, 512),  # Adjusted for 2048x16 input
+
+        # Regression
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 1)
+            nn.Linear(32, 1)
         )
+
+        self.criterion = nn.MSELoss()
+        self.train_rmse = []
 
     def forward(self, x):
-        batch_size, num_slices, C, H, W = x.shape
-        
-        # Encode all slices
-        features = self.encoder(x.view(-1, C, H, W))
-        features = features.view(batch_size, num_slices, -1)
-        
-        # Handle variable slice counts
-        if num_slices < self.max_slices:
-            padding = torch.zeros(batch_size, self.max_slices - num_slices, 
-                                features.shape[-1], device=x.device)
-            features = torch.cat([features, padding], dim=1)
-        
-        # Aggregate features
-        agg_features = features.sum(dim=1)
-        
-        # Predict volume
-        return self.regressor(agg_features).squeeze()
+        x = self.conv_layers(x)
+        x = self.fc(x)
+        return x
+
+    def training_step(self, batch, batch_idx):
+        images, targets = batch
+        preds = self(images).squeeze()
+        loss = self.criterion(preds, targets)
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        images, targets = batch
+        preds = self(images).squeeze()
+        loss = self.criterion(preds, targets)
+        self.log("val_loss", loss, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
