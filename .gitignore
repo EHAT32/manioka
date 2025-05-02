@@ -6,3 +6,4 @@ images
 processed_data
 lightning_logs
 train_labels
+seg
