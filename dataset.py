@@ -18,7 +18,8 @@ def generate_random_color():
 class RootVolumeDataset(Dataset):
     def __init__(self, csv_path, img_root, label_root,
                  target_width, target_height, device, train = True, 
-                 transform=None, pre_segment = False):
+                 transform=None, pre_segment = False,
+                 full_img = False):
         """
         Args:
             csv_path (str): Path to CSV file with annotations.
@@ -35,6 +36,7 @@ class RootVolumeDataset(Dataset):
         self.transform = transform 
         self.is_train = train
         self.pre_segment = pre_segment
+        self.full_img = full_img
         self.device = device
         self.yolo_seg = YOLO('seg_models/best_full.pt').eval().to(self.device)
 
@@ -154,21 +156,23 @@ class RootVolumeDataset(Dataset):
         return img
 
     #works with list of parsed polygons
-    def draw_mask(img : Image, polygons : list) -> Image:
+    def draw_mask(self, img : Image, polygons : list) -> Image:
         """Draws polygon masks with unique colors per instance on the image."""
         image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         
-        img_height, img_width = image.size
+        img_height, img_width = img.size
         
         for polygon in polygons:
             color = generate_random_color()  # Unique color for each instance
             cv2.polylines(image, [polygon], isClosed=True, color=color, thickness=2)
             #cv2.fillPoly(image, [polygon], color=color + (50,))  # Transparent fill
         
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+        
         return image
 
-    def _load_slice_sequence(self, folder, side, start, end):
-        """Load sequence of slices for given range"""
+    def _load_two_sides(self, folder, start, end):
         images = []
         for i in range(start, end + 1):
             limg_path = os.path.join(
@@ -185,41 +189,59 @@ class RootVolumeDataset(Dataset):
                 limg = Image.open(limg_path).convert('RGB')
                 rimg = Image.open(rimg_path).convert('RGB')
                 label_path = f"train_labels/{folder}"
-                mask_l = self._get_label(label_path+f"_L_{i:03d}.txt", limg.width, limg.height)
-                mask_r = self._get_label(label_path+f"_R_{i:03d}.txt", rimg.width, rimg.height)
-                limg = self.draw_mask(limg, mask_l)
-                rimg = self.draw_mask(rimg, mask_r)
+                label_l = label_path+f"_L_{i:03d}.txt"
+                label_r = label_path+f"_R_{i:03d}.txt"
+                if os.path.exists(label_l) and os.path.exists(label_r):
+                    mask_l = self._get_label(label_l, limg.width, limg.height)
+                    mask_r = self._get_label(label_r, rimg.width, rimg.height)
+                    limg = self.draw_mask(limg, mask_l)
+                    rimg = self.draw_mask(rimg, mask_r)
                 full_img = self._merge_left_right(limg, rimg)
                 if self.pre_segment:
                     crops = self._crop_segmented(full_img)
                 else:
                     crops = full_img
-                # # Apply YOLO segmentation and draw polygons
-                # yolo_results = self.yolo_seg(np.array(full_img))
-                # full_img_with_polygons = self.draw_polygons(full_img, yolo_results)
-                # original_images.append(np.array(full_img_with_polygons)) # add to the list before converting to numpy array
-
-                # mask = self._apply_segmentation(full_img_with_polygons)  # Get segmentation mask
-
-                # # Combine RGB + mask as 4-channel input
-                # combined = np.concatenate([np.array(full_img_with_polygons), np.array(mask)], axis=-1)
                 images.append(crops)
             else:
                 # Handle missing slices with zero padding
                 images.append([Image.new('RGB', (64, 64), (0,0,0))])
 
-        # # Plot all original images stacked vertically in a single figure
-        # num_images = len(original_images)
-        # if num_images > 0:
-        #     fig, axes = plt.subplots(num_images, 1, figsize=(5, 3 * num_images))  # Adjust size as needed
-
-        #     for i, img in enumerate(original_images):
-        #         axes[i].imshow(img)
-        #         axes[i].axis('off')
-        #         axes[i].set_title(f"Slice {start + i}")  # Set title for each slice... plt.tight_layout()  # Adjust layout to prevent overlapping titles
-        #     plt.show()
+        return images
+            
+    def _load_one_side(self, folder, side, start, end):
+        """Load sequence of slices for given range"""
+        images = []
+        for i in range(start, end + 1):
+            path = os.path.join(
+                self.img_root,
+                folder,
+                f"{folder}_{side}_{i:03d}.png"
+            )
+            if os.path.exists(path):
+                img = Image.open(path).convert('RGB')
+                label_path = f"train_labels/{folder}"
+                label = label_path+f"_{side}_{i:03d}.txt"
+                if os.path.exists(label):
+                    mask = self._get_label(label, img.width, img.height)
+                    img = self.draw_mask(img, mask)
+                if self.pre_segment:
+                    crops = self._crop_segmented(img)
+                else:
+                    crops = img
+                    
+                images.append(crops)
+            else:
+                # Handle missing slices with zero padding
+                images.append([Image.new('RGB', (64, 64), (0,0,0))])
 
         return images
+
+    def _load_slice_sequence(self, folder, side, start, end):
+        """Load sequence of slices for given range"""
+        if self.full_img:
+            return self._load_two_sides(folder, start, end)
+        else:
+            return self._load_one_side(folder, side, start, end)
 
     def _crop_segmented(self, image : Image):
         """
