@@ -8,3 +8,4 @@ lightning_logs
 train_labels
 seg
 runs
+merged_images
