@@ -1,0 +1,14 @@
+requests
+fastapi
+uvicorn
+numpy
+pillow
+python-multipart
+aiofiles
+httpx
+pydantic
+pandas
+torch
+torchvision
+grpcio
+tritonclient
