@@ -35,4 +35,4 @@ http://127.0.0.1:8501/
 
 ## Данные для тестирования
 
-Для проверки работы системы можно воспользоваться данными из папки data: test.zip и Test.csv.
+Для проверки работы системы можно воспользоваться данными ./data/Test.csv и [Test.csv](https://drive.google.com/file/d/1qNcKBJpxm8Xkpwb_z2AVp8duwaJX291H/view?usp=drive_link).
