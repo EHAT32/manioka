@@ -4,6 +4,7 @@ import zipfile
 import tempfile
 import os
 import requests
+import json
 
 def extract_zip(zip_file):
     temp_dir = tempfile.mkdtemp()
@@ -36,10 +37,12 @@ if uploaded_zip and uploaded_csv:
                         "zip_file": zf,
                         "csv_file": cf
                     }
-                    response = requests.post(f"{api_url}/predict", files=files)
+                    model_name = "cnn_model"
+                    response = requests.post(f"{api_url}/predict/?model_name={model_name}", files=files)
 
                 if response.status_code == 200:
-                    result_df = pd.DataFrame(response.json())
+                    data = response.json()["predictions"]
+                    result_df = pd.DataFrame(data)
                     st.success("Анализ завершён!")
                     st.dataframe(result_df)
                 else:

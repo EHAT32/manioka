@@ -12,3 +12,5 @@ torch
 torchvision
 grpcio
 tritonclient
+tritonclient[grpc]
+tritonclient[utils]

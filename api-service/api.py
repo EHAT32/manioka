@@ -76,7 +76,7 @@ async def predict(
         new_test_df['ImageBase64'] = new_test_df['ImageSegments'].apply(encode_image_to_base64)
         new_test_df = await infer_all_images(new_test_df, model_name)
         print(f"new_test_df")
-        new_test_df = new_test_df.drop(columns=["ImageBase64", "WasSegmented", "Side"])
+        new_test_df = new_test_df.drop(columns=["ImageBase64", "WasSegmented", "Side", "ImageSegments", "Width"])
         result = new_test_df.to_dict(orient="records")
         return {
             "predictions": result}
